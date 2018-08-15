@@ -27,6 +27,8 @@ object Server extends TwitterServer {
   val fileConfig = ConfigFactory.parseFile(myConfigFile).getConfig("brutus")
   val config = ConfigFactory.load(fileConfig)
 
+  val port = Try(config.getString("api.port")).toOption.getOrElse("8082")
+
   val geneDictionaryFile = Try(config.getString("geneDictionaryFile")).toOption
     .getOrElse("../data/L1000 genes vs proteins.csv")
   val drugbankDataFile = Try(config.getString("drugbankDataFile")).toOption
@@ -125,7 +127,7 @@ object Server extends TwitterServer {
   def main(): Unit = {
     val server = Http.server
       .withStatsReceiver(statsReceiver)
-      .serve(":8082", service)
+      .serve(":" + port, service)
     onExit {
       server.close()
     }
