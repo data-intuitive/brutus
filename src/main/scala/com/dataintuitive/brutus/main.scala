@@ -29,15 +29,37 @@ object Server extends TwitterServer {
 
   val port = Try(config.getString("api.port")).toOption.getOrElse("8082")
 
+  val base="/Users/toni/Dropbox/_Janssen/ComPass/Architecture/Brutus/data/"
   val geneDictionaryFile = Try(config.getString("geneDictionaryFile")).toOption
-    .getOrElse("../data/L1000 genes vs proteins.csv")
+    .getOrElse(base+"L1000 genes vs proteins.csv")
   val drugbankDataFile = Try(config.getString("drugbankDataFile")).toOption
-    .getOrElse("../data/drugbank.csv")
+    .getOrElse(base+"drugbank.csv")
+  val newdrugbankDataFile = Try(config.getString("newdrugbankDataFile")).toOption
+    .getOrElse(base+"drugbank_update.tsv")
 
   val ping: Endpoint[String] = get("ping") { Ok("Pong") }
 
   val geneDictionary = Genes(geneDictionaryFile)
   val drugbankData = DrugBank(drugbankDataFile)
+  val newdrugbankData = NewDrugBank(newdrugbankDataFile)
+
+  def simpleTransform(s: String):String =  
+    s.replace("-", " ") // Avoid some strange cases...
+
+  def fuzzyMatch(strWithCase:String, db:Array[NewDrugBankRecord]):Array[NewDrugBankRecord] = {
+
+    val str = simpleTransform(
+      strWithCase.toLowerCase
+    )
+
+    db.filter{entry =>
+      (entry.syn.map(x => simpleTransform(x.toLowerCase)).filter(_.contains(str)).length > 0) ||
+      (entry.productName.map(x => simpleTransform(x.toLowerCase)).filter(_.contains(str)).length > 0) ||
+      (entry.genericName.map(x => simpleTransform(x.toLowerCase)).filter(_.contains(str)).length > 0) ||
+      (entry.externalID.map(x => simpleTransform(x.toLowerCase)).filter(_.contains(str)).length > 0) ||
+      (entry.accn == Some(str))
+    }
+  }
 
   /**
     * /gene/symbol/<SYMBOL> results in an exact match or an empty result
@@ -65,6 +87,43 @@ object Server extends TwitterServer {
       if (s != "") Ok(geneDictionary.filterKeys(_ contains s).values.toList)
       else Ok(geneDictionary.values.toList)
     }
+
+  /**
+    * /newdrugbank/inchikey/key results in an exact match with the name
+    *
+    * Example:
+    *   http "localhost:8082/newdrugbank/inchikey/..."
+    *
+    * A 404 is returned if no entry is found.
+    */
+  val exactDrugbank2ByInchiKey: Endpoint[NewDrugBankRecord] = get(
+    "newdrugbank" :: "inchikey" :: path[String]) { (s: String) =>
+    FuturePool.unboundedPool { Ok(newdrugbankData.filter(_.inchiKey.getOrElse("NA").replace(' ','-') == s).head) }
+  } handle {
+    case e: NoSuchElementException => NotFound(e) // or BadRequest
+  }
+
+ /**
+   * /newdrugbank/fuzzy/<query> results in an exact match with the name
+    *
+    * Example:
+    *   http "localhost:8082/newdrugbank/fuzzy/..."
+    *
+    * A 404 is returned if no entry is found.
+    */
+  val exactDrugbank2Fuzzy: Endpoint[NewDrugBankRecord] = get(
+    "newdrugbank" :: "fuzzy" :: path[String]) { (s: String) =>
+    FuturePool.unboundedPool { Ok(fuzzyMatch(s, newdrugbankData).head) }
+  } handle {
+    case e: NoSuchElementException => NotFound(e) // or BadRequest
+  }
+
+  val exactDrugbank2ByName: Endpoint[NewDrugBankRecord] = get(
+    "newdrugbank" :: "name" :: path[String]) { (s: String) =>
+    FuturePool.unboundedPool { Ok(newdrugbankData.filter(_.brandName.toSet.contains(s)).head) }
+  } handle {
+    case e: NoSuchElementException => NotFound(e) // or BadRequest
+  }
 
   /**
     * /drugbank/name/<name> results in an exact match with the name
@@ -114,7 +173,7 @@ object Server extends TwitterServer {
   }
 
   val api =
-    (exactSymbolSearch :+: symbolSearch :+: exactDrugbankByName :+: drugbankByName :+: drugbankByJNJs :+: ping).toService
+    (exactDrugbank2Fuzzy :+: exactDrugbank2ByInchiKey :+: exactDrugbank2ByName :+: exactSymbolSearch :+: symbolSearch :+: exactDrugbankByName :+: drugbankByName :+: drugbankByJNJs :+: ping).toService
 
   val policy: Cors.Policy = Cors.Policy(
     allowsOrigin = _ => Some("*"),
