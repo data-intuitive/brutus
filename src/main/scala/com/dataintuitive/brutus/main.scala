@@ -14,6 +14,7 @@ import com.twitter.finagle.http.filter.Cors
 
 import Model._
 import Genes._
+import Matching._
 
 import com.typesafe.config.ConfigFactory
 import scala.util.Try
@@ -36,33 +37,22 @@ object Server extends TwitterServer {
     .getOrElse(base+"drugbank.csv")
   val newdrugbankDataFile = Try(config.getString("newdrugbankDataFile")).toOption
     .getOrElse(base+"drugbank_update.tsv")
+  val matchingFile = Try(config.getString("matchingFile")).toOption
+    .getOrElse(base+"matching-new.tsv")
 
   val ping: Endpoint[String] = get("ping") { Ok("Pong") }
 
   val geneDictionary = Genes(geneDictionaryFile)
   val drugbankData = DrugBank(drugbankDataFile)
   val newdrugbankData = NewDrugBank(newdrugbankDataFile)
+  val matching = Matching(matchingFile)
 
   def simpleTransform(s: String):String =  
     s.replace("-", " ") // Avoid some strange cases...
 
-  def fuzzyMatch(strWithCase:String, db:Array[NewDrugBankRecord]):Array[NewDrugBankRecord] = {
-
-    val str = simpleTransform(
-      strWithCase.toLowerCase
-    )
-
-    db.filter{entry =>
-      (entry.syn.map(x => simpleTransform(x.toLowerCase)).filter(_.contains(str)).length > 0) ||
-      (entry.productName.map(x => simpleTransform(x.toLowerCase)).filter(_.contains(str)).length > 0) ||
-      (entry.genericName.map(x => simpleTransform(x.toLowerCase)).filter(_.contains(str)).length > 0) ||
-      (entry.externalID.map(x => simpleTransform(x.toLowerCase)).filter(_.contains(str)).length > 0) ||
-      (entry.accn == Some(str))
-    }
-  }
-
   /**
-    * /gene/symbol/<SYMBOL> results in an exact match or an empty result
+    * /gene/symbol/<SYMBOL> results in an exact match or an empty result.
+    * Case does not matter.
     *
     * Example:
     *   http "localhost:8082/gene/symbol/MELK"
@@ -71,88 +61,27 @@ object Server extends TwitterServer {
     */
   val exactSymbolSearch: Endpoint[GenesRecord] =
     get("gene" :: "symbol" :: path[String]) { (s: String) =>
-      Ok(geneDictionary(s))
+      Ok(geneDictionary(s.toUpperCase))
     } handle {
       case e: NoSuchElementException => NotFound(e) // or BadRequest
     }
 
   /**
-    * /genes/symbol/<PART_OF_SYMBOL> results in a list of gene records
+    * /genes/symbol/<PART_OF_SYMBOL> results in a list of gene records which
+    * contains the query string. Case does not matter.
     *
     * Example:
     *   http "localhost:8082/genes/symbol/EDE"
     */
   val symbolSearch: Endpoint[List[GenesRecord]] =
     get("genes" :: "symbol" :: path[String]) { (s: String) =>
-      if (s != "") Ok(geneDictionary.filterKeys(_ contains s).values.toList)
+      if (s != "") Ok(
+        geneDictionary
+          .filterKeys(_ contains s.toUpperCase)
+          .values
+          .toList
+      )
       else Ok(geneDictionary.values.toList)
-    }
-
-  /**
-    * /newdrugbank/inchikey/key results in an exact match with the name
-    *
-    * Example:
-    *   http "localhost:8082/newdrugbank/inchikey/..."
-    *
-    * A 404 is returned if no entry is found.
-    */
-  val exactDrugbank2ByInchiKey: Endpoint[NewDrugBankRecord] = get(
-    "newdrugbank" :: "inchikey" :: path[String]) { (s: String) =>
-    FuturePool.unboundedPool { Ok(newdrugbankData.filter(_.inchiKey.getOrElse("NA").replace(' ','-') == s).head) }
-  } handle {
-    case e: NoSuchElementException => NotFound(e) // or BadRequest
-  }
-
- /**
-   * /newdrugbank/fuzzy/<query> results in an exact match with the name
-    *
-    * Example:
-    *   http "localhost:8082/newdrugbank/fuzzy/..."
-    *
-    * A 404 is returned if no entry is found.
-    */
-  val exactDrugbank2Fuzzy: Endpoint[NewDrugBankRecord] = get(
-    "newdrugbank" :: "fuzzy" :: path[String]) { (s: String) =>
-    FuturePool.unboundedPool { Ok(fuzzyMatch(s, newdrugbankData).head) }
-  } handle {
-    case e: NoSuchElementException => NotFound(e) // or BadRequest
-  }
-
-  val exactDrugbank2ByName: Endpoint[NewDrugBankRecord] = get(
-    "newdrugbank" :: "name" :: path[String]) { (s: String) =>
-    FuturePool.unboundedPool { Ok(newdrugbankData.filter(_.brandName.toSet.contains(s)).head) }
-  } handle {
-    case e: NoSuchElementException => NotFound(e) // or BadRequest
-  }
-
-  /**
-    * /drugbank/name/<name> results in an exact match with the name
-    *
-    * Example:
-    *   http "localhost:8082/drugbank/name/CETRORELIX"
-    *
-    * A 404 is returned if no entry is found.
-    */
-  val exactDrugbankByName: Endpoint[DrugBankRecord] = get(
-    "drugbank" :: "name" :: path[String]) { (s: String) =>
-    FuturePool.unboundedPool { Ok(drugbankData.filter(_.name == s).head) }
-  } handle {
-    case e: NoSuchElementException => NotFound(e) // or BadRequest
-  }
-
-  /**
-    * /drugbanks/name/<name> results in an exact match with the name
-    *
-    * Example:
-    *   http "localhost:8082/drugbank/name/CETRORELIX"
-    *
-    * A 404 is returned if no entry is found.
-    */
-  val drugbankByName: Endpoint[List[DrugBankRecord]] =
-    get("drugbanks" :: "name" :: path[String]) { (s: String) =>
-      FuturePool.unboundedPool {
-        Ok(drugbankData.filter(_.name contains s).toList)
-      }
     }
 
   /**
@@ -162,18 +91,25 @@ object Server extends TwitterServer {
     *   http "localhost:8082/drugbank/jnjs/17096768"
     *
     * A 404 is returned if no entry is found.
+    *
+    * Please note: 2 lookups are performed in one go. In future versions, we might
+    * add support for the two steps individually.
     */
-  val drugbankByJNJs: Endpoint[DrugBankRecord] = get(
+  val drugbankByJNJs: Endpoint[NewDrugBankRecord] = get(
     "drugbank" :: "jnjs" :: path[String]) { (s: String) =>
     FuturePool.unboundedPool {
-      Ok(drugbankData.filter(_.jnjs.contains(s)).head)
+      Ok(newdrugbankData.filter(_.accn.exists(_ == matching(s))).head)
     }
   } handle {
     case e: NoSuchElementException => NotFound(e) // or BadRequest
   }
 
   val api =
-    (exactDrugbank2Fuzzy :+: exactDrugbank2ByInchiKey :+: exactDrugbank2ByName :+: exactSymbolSearch :+: symbolSearch :+: exactDrugbankByName :+: drugbankByName :+: drugbankByJNJs :+: ping).toService
+    ( exactSymbolSearch :+: 
+      symbolSearch :+: 
+      drugbankByJNJs :+: 
+      ping
+    ).toService
 
   val policy: Cors.Policy = Cors.Policy(
     allowsOrigin = _ => Some("*"),
