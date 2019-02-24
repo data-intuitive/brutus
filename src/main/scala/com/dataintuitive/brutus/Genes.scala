@@ -25,7 +25,7 @@ object Genes {
     // flatten symbol nested values
     val genesFlatSymbols = genes.flatMap(g =>
       g.symbol.split("///").map(_.trim).map(sym => g.copy(symbol = sym)))
-    genesFlatSymbols.length
+    // genesFlatSymbols.length
 
     val defaultRecord = GenesRecord("No Probeset",
                                     "No EntrezID",
@@ -40,7 +40,7 @@ object Genes {
                                     None,
                                     None)
     genesFlatSymbols
-      .map(g => (g.symbol, g))
+      .map(g => (g.symbol.toUpperCase, g))
       .toMap
       //.withDefault(_ => defaultRecord)
 
