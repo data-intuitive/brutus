@@ -30,7 +30,7 @@ object Server extends TwitterServer {
 
   val port = Try(config.getString("api.port")).toOption.getOrElse("8082")
 
-  val base="/Users/toni/Dropbox/_Janssen/ComPass/Architecture/Brutus/data/"
+  val base="<location>"
   val geneDictionaryFile = Try(config.getString("geneDictionaryFile")).toOption
     .getOrElse(base+"L1000 genes vs proteins.csv")
   val drugbankDataFile = Try(config.getString("drugbankDataFile")).toOption
