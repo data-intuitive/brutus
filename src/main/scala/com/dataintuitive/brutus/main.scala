@@ -95,10 +95,10 @@ object Server extends TwitterServer {
     * Please note: 2 lookups are performed in one go. In future versions, we might
     * add support for the two steps individually.
     */
-  val drugbankByJNJs: Endpoint[NewDrugBankRecord] = get(
+  val drugbankByJNJs: Endpoint[DrugBankRecord] = get(
     "drugbank" :: "jnjs" :: path[String]) { (s: String) =>
     FuturePool.unboundedPool {
-      Ok(newdrugbankData.filter(_.accn.exists(_ == matching(s))).head)
+      Ok(convertNewToOld(newdrugbankData.filter(_.accn.exists(_ == matching(s))).head))
     }
   } handle {
     case e: NoSuchElementException => NotFound(e) // or BadRequest

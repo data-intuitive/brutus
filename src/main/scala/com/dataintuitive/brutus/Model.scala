@@ -27,8 +27,6 @@ object Model {
     chemblMechanismOfAction: Option[String], chemblTargetGeneName:Option[String],
     jnjs: Option[String]) extends Serializable
 
-}
-
   case class NewDrugBankRecord(
     accn: Option[String],
     canonicalSmiles: Option[String],
@@ -56,4 +54,23 @@ object Model {
     inchi: Option[String],
     inchiKey: Option[String]
   ) extends Serializable
+
+def convertNewToOld(n: NewDrugBankRecord):DrugBankRecord = {
+    DrugBankRecord(
+      n.genericName.headOption.getOrElse("NA"),
+      "", //smiles
+      None, //tautomericSmiles
+      n.accn,
+      n.mechanismOfAction,
+      Some(n.targetGeneName.mkString(" | ")),
+      None,
+      None,
+      None,
+      None,
+      None
+      )
+  }
+
+}
+
 
