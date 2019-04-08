@@ -25,7 +25,8 @@ object Model {
     drugBankMechanismOfAction: Option[String], drugBankTargetGeneName: Option[String], 
     iupharMechanismOfAction: Option[String], iupharTargetGeneName:Option[String],
     chemblMechanismOfAction: Option[String], chemblTargetGeneName:Option[String],
-    jnjs: Option[String]) extends Serializable
+    jnjs: Option[String], 
+    version: String = "v1") extends Serializable
 
   case class NewDrugBankRecord(
     accn: Option[String],
@@ -52,7 +53,8 @@ object Model {
     searchField: Option[String],
     brandName: Option[String],
     inchi: Option[String],
-    inchiKey: Option[String]
+    inchiKey: Option[String],
+    version: String = "v2"
   ) extends Serializable
 
 def convertNewToOld(n: NewDrugBankRecord):DrugBankRecord = {
@@ -67,7 +69,8 @@ def convertNewToOld(n: NewDrugBankRecord):DrugBankRecord = {
       None,
       None,
       None,
-      None
+      None,
+      "v1"
       )
   }
 
