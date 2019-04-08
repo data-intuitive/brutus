@@ -104,10 +104,20 @@ object Server extends TwitterServer {
     case e: NoSuchElementException => NotFound(e) // or BadRequest
   }
 
+  val drugbankV2ByJNJs: Endpoint[NewDrugBankRecord] = get(
+    "drugbank" :: "v2" :: "jnjs" :: path[String]) { (s: String) =>
+    FuturePool.unboundedPool {
+      Ok(newdrugbankData.filter(_.accn.exists(_ == matching(s))).head)
+    }
+  } handle {
+    case e: NoSuchElementException => NotFound(e) // or BadRequest
+  }
+
   val api =
-    ( exactSymbolSearch :+: 
-      symbolSearch :+: 
-      drugbankByJNJs :+: 
+    ( exactSymbolSearch :+:
+      symbolSearch :+:
+      drugbankByJNJs :+:
+      drugbankV2ByJNJs :+:
       ping
     ).toService
 
