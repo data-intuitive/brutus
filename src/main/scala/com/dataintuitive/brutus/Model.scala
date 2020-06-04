@@ -18,7 +18,6 @@ object Model {
     involved: Option[String]
   ) extends Serializable
 
-
   case class DrugBankRecord(name: String, smiles:String,
     tautomericSmiles:Option[String],
     Accn: Option[String], 
@@ -75,5 +74,3 @@ def convertNewToOld(n: NewDrugBankRecord):DrugBankRecord = {
   }
 
 }
-
-

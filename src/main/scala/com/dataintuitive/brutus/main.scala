@@ -6,6 +6,9 @@ import com.twitter.server.TwitterServer
 import com.twitter.util.FuturePool
 import com.twitter.logging.Formatter
 
+import com.typesafe.config.Config
+import collection.JavaConverters._
+
 import io.finch._
 import io.finch.circe._
 import io.finch.syntax._
@@ -15,6 +18,8 @@ import com.twitter.finagle.http.filter.Cors
 import Model._
 import Genes._
 import Matching._
+
+import CompoundAnnotations._
 
 import com.typesafe.config.ConfigFactory
 import scala.util.Try
@@ -46,6 +51,47 @@ object Server extends TwitterServer {
   val drugbankData = DrugBank(drugbankDataFile)
   val newdrugbankData = NewDrugBank(newdrugbankDataFile)
   val matching = Matching(matchingFile)
+
+
+  /**
+   * Compound Annotations
+   */
+  val defaultDict = Map(
+    "id" -> "id",
+    "externalID" -> "externalID",
+    "genericName" -> "genericName",
+    "therapeuticGroup" -> "therapeuticGroup",
+    "mechanismOfAction" -> "mechanismOfAction",
+    "syn" -> "syn",
+    "searchField" -> "searchField",
+    "targetGenes" -> "targetGenes",
+    "name" -> "name"
+  )
+  val caFile = Try(config.getString("compoundAnnotations.file")).toOption
+    .getOrElse("/Users/toni/data/gsk/demo/source/compass_compound_annotations.csv")
+  val caDelimiter = Try(config.getString("compoundAnnotations.delimiter")).toOption
+    .getOrElse("\t")
+  def caDict(config: Config):Map[String, String] = {
+    Try(config.getObject("compoundAnnotations.dict")).toOption
+        .map(_.unwrapped.asScala.toMap.map{case (k,v) => (k.toString, v.toString)})
+        .getOrElse(defaultDict)
+  }
+  def externalDict(config: Config):Map[String, String] = {
+    Try(config.getObject("compoundAnnotations.externalID")).toOption
+        .map(_.unwrapped.asScala.toMap.map{case (k,v) => (k.toString, v.toString)})
+        .getOrElse(defaultDict)
+  }
+  def externalCompoundSources(config: Config):Map[String, String] = {
+    Try(config.getObject("externalCompoundSources")).toOption
+        .map(_.unwrapped.asScala.toMap.map{case (k,v) => (k.toString, v.toString)})
+        .getOrElse(defaultDict)
+  }
+
+  val dict = caDict(config)
+  val externalID = externalDict(config)
+  val externalSources = externalCompoundSources(config)
+
+  val ca = CompoundAnnotations(caFile, caDelimiter, dict, externalID, externalSources)
 
   def simpleTransform(s: String):String =  
     s.replace("-", " ") // Avoid some strange cases...
@@ -85,6 +131,18 @@ object Server extends TwitterServer {
     }
 
   /**
+    * Search by Compound ID and return annotations.
+    */
+  val caByID: Endpoint[CompoundAnnotation] = get(
+    "ca" :: "id" :: path[String]) { (s: String) =>
+    FuturePool.unboundedPool {
+      Ok(ca.filter(_.id == s).head)
+    }
+  } handle {
+    case e: NoSuchElementException => NotFound(e) // or BadRequest
+  }
+
+  /**
     * /drugbank/jnjs/<jnj> results in an exact match with the jnj
     *
     * Example:
@@ -118,6 +176,7 @@ object Server extends TwitterServer {
       symbolSearch :+:
       drugbankByJNJs :+:
       drugbankV2ByJNJs :+:
+      caByID :+:
       ping
     ).toService
 
