@@ -37,14 +37,14 @@ object CompoundAnnotations {
     id: String,
     externalID: Seq[ExternalId],
     genericName: Seq[String],
-    therapeuticGroup: Option[String],
+    therapeuticGroup: Seq[String],
     mechanismOfAction: Option[String],
     syn: Seq[String],
     searchField: Option[String],
     targetGenes: Seq[String],
     name: Option[String],
     clinicalPhase: Option[String],
-    indication: Option[String],
+    indication: Seq[String],
     version: String = "v1"
   ) extends Serializable
 
@@ -72,21 +72,25 @@ object CompoundAnnotations {
 
       val xd:Map[String,Option[String]] = x.withDefault(_ => None)
 
-      val externalIds = safeExternal.map{ case(source, feature) =>
-        ExternalId(source, xd(feature), xd(feature).map(f => sources.get(source).getOrElse("") + f)) }.toSeq
+      val externalIds = external.map{ case(source, feature) => xd(feature) match {
+        case Some(str) if (str != "") =>
+          Some(ExternalId(source, xd(feature), xd(feature).map(f => sources.get(source).getOrElse("") + f)) )
+        case _ =>
+          None
+      }}.flatMap(x => x).toSeq
 
       CompoundAnnotation(
         xd(safeDict("id")).getOrElse("No ID!"),
         externalIds,
         xd(safeDict("genericName")).map(_.split("\\|").toSeq).getOrElse(Seq()),
-        xd(safeDict("therapeuticGroup")),
+        xd(safeDict("therapeuticGroup")).map(_.split("\\|").toSeq).getOrElse(Seq()),
         xd(safeDict("mechanismOfAction")),
         xd(safeDict("syn")).map(_.split("\\|").toSeq).getOrElse(Seq()),
         xd(safeDict("searchField")),
         xd(safeDict("targetGenes")).map(_.split("\\|").toSeq).getOrElse(Seq()),
         xd(safeDict("name")),
         xd(safeDict("clinicalPhase")),
-        xd(safeDict("indication")),
+        xd(safeDict("indication")).map(_.split("\\|").toSeq).getOrElse(Seq()),
         "v1"
       )
     }
